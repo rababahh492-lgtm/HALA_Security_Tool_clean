@@ -1,0 +1,6 @@
+*.apk
+test_files/
+backend/uploaded_apks/
+.venv/
+__pycache__/
+reports/
