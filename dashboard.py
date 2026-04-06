@@ -97,7 +97,7 @@ if st.session_state.page=="landing":
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("🚀 Start Scanning"):
+    if st.button(" Start Scanning"):
         st.session_state.page = "dashboard"
 
 # =========================================================
@@ -116,7 +116,7 @@ if st.session_state.page=="dashboard":
         loader_placeholder.markdown("<div class='loader'></div>", unsafe_allow_html=True)
         time.sleep(1)
 
-        with st.spinner("🔄 Analyzing APKs..."):
+        with st.spinner(" Analyzing APKs..."):
             for file in uploaded_files:
                 path=os.path.join("temp",file.name)
                 os.makedirs("temp",exist_ok=True)
@@ -143,7 +143,7 @@ if st.session_state.page=="dashboard":
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("### 🤖 AI Vulnerability Analysis")
+        st.markdown("###  AI Vulnerability Analysis")
         for vul in app.get("Vulnerabilities",[]):
             st.markdown(f"""
             <div class='tip fadein'>
@@ -164,13 +164,13 @@ if st.session_state.page=="dashboard":
     if results:
         df=pd.DataFrame(results).sort_values(by="Risk Score", ascending=False)
         st.markdown("---")
-        st.subheader("📊 Risk Scores Overview")
+        st.subheader(" Risk Scores Overview")
         st.bar_chart(df.set_index("APK Name")["Risk Score"])
 
     # ---------- PIE CHART ----------
     if permissions_list:
         st.markdown("---")
-        st.subheader("📌 Permissions Distribution")
+        st.subheader(" Permissions Distribution")
         p=pd.DataFrame(permissions_list,columns=["Permission"])
         p=p["Permission"].value_counts().reset_index()
         p.columns=["Permission","Count"]
