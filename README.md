@@ -1,66 +1,47 @@
-🔐 HalaScan - Mobile Security Scanner
+HALA-SCAN 🚀
 
-HalaScan is a simple security tool I built to analyze Android APK files and check for potential vulnerabilities.
-The idea behind it is to make APK analysis easier and more understandable, especially for students or beginners in cybersecurity.
+Your friendly mobile security scanner
 
+Hey there! HALA-SCAN is a tool I built to help you quickly check Android apps for security issues. It scans APK files, calculates a risk score, shows potential vulnerabilities, and even gives you tips to fix them. Perfect for devs, security enthusiasts, or anyone curious about app safety.
 
--- What it does: 
-
-Scans APK files
-Checks permissions and app components
-Detects some common security issues
-Gives a risk score (Low / Medium / High)
-Generates reports (TXT, JSON, PDF)
-Shows results in a simple dashboard 
-
----
-
--- How it works
-
-Basically:
-
-APK file → Scanner → Report → Dashboard
-
-
--- Tools I used:
-
-Python
-Streamlit (for the dashboard)
-Androguard (for APK analysis)
-
-
--- How to run it:
-
-1- Install the requirements:
+🌟 What It Does
+Scan APKs – Upload one or multiple APK files, and HALA-SCAN checks them for issues.
+Risk Score – See if an app is HIGH, MEDIUM, or LOW risk.
+Vulnerability Analysis – Get a breakdown of issues with:
+Name
+OWASP classification
+Description
+Suggested Solution
+Interactive Dashboard – Clean and dynamic interface with:
+Loading animation while scanning
+Typing effect welcome message
+Fade-in + shimmer effect on results
+Visual Charts – Risk scores bar chart and permissions pie chart.
+PDF Reports – Download each app’s scan as a PDF.
+🛠 How to Run
+Clone the repo:
+git clone https://github.com/rababahh492-lgtm/HALA_Security_Tool.git
+cd HALA_Security_Tool
+Create a virtual environment and install dependencies:
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
 pip install -r requirements.txt
-
-2- Run the scanner:
-python run_halascan.py
-
-3-Run the dashboard:
+Run the dashboard:
 streamlit run dashboard.py
+Upload APK files, wait for the analysis, check results, and download reports.
 
- 
--- Output example
+ Sample Output:
+App Name: MyApp.apk
+Risk Score: 78/100 (HIGH)
+Vulnerabilities:
+Insecure Data Storage (M2) – Sensitive data is stored unencrypted. Solution: Encrypt it!
+Improper Platform Usage (M4) – Using HTTP instead of HTTPS. Solution: Use HTTPS + pinning.
+Permissions: INTERNET, CAMERA, LOCATION, READ_CONTACTS
 
-After scanning, you will see:
+(All results appear with animated effects in the dashboard.)
 
-Risk level (Low / Medium / High)
-List of findings (if any)
-Generated reports saved in the reports/ folder
-
-
--- Project structure (simplified)
-
-backend/ → core logic
-reports/ → scan results
-test_files/ → sample APKs
-uploads/ → dashboard uploads
-dashboard.py → UI
-halasec_scan.py → scanner
-
-
--- Future ideas:
-Improve detection accuracy
-Add more vulnerability checks
-Maybe integrate AI later
+ Next Steps / Future Improvements
+Add AI-based prediction for unknown vulnerabilities.
+Add iOS support.
+Make it multi-user with login/dashboard.
