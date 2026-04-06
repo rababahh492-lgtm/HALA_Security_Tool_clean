@@ -45,7 +45,6 @@ Permissions: INTERNET, CAMERA, LOCATION, READ_CONTACTS
 
 (All results appear with animated effects in the dashboard.)
 
- Next Steps / Future Improvements
-Add AI-based prediction for unknown vulnerabilities.
-Add iOS support.
-Make it multi-user with login/dashboard.
+Future Improvements:
+Adding iOS support is on the roadmap to make the scanner cross-platform.
+Eventually, we want to make it multi-user, with secure logins and a full dashboard for team management.
