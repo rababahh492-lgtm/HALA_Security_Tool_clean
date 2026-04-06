@@ -27,9 +27,13 @@ python -m venv .venv
 # Windows
 .venv\Scripts\activate
 pip install -r requirements.txt
+
 Run the dashboard:
 streamlit run dashboard.py
 Upload APK files, wait for the analysis, check results, and download reports.
+
+Run the script halasec_scan <apk files name>:
+python halasec_scan.py test_files 
 
  Sample Output:
 App Name: MyApp.apk
