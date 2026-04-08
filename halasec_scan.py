@@ -1,180 +1,88 @@
-from androguard.misc import AnalyzeAPK
 import os
-import sys
+from androguard.core.bytecodes.apk import APK
 import json
-import hashlib
-import requests
 
-def ai_analyze(findings, permissions):
-    try:
-        prompt = f"""
-You are a cybersecurity expert.
 
-Analyze the following APK scan results:
-
-Permissions:
-{permissions}
-
-Findings:
-{findings}
-
-Give:
-1. Risk Level (LOW/MEDIUM/HIGH)
-2. Short explanation
-3. Security recommendations
-"""
-
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={
-                "model": "mistral",
-                "prompt": prompt,
-                "stream": False
-            }
-        )
-
-        result = response.json()["response"]
-
-        return result
-
-    except Exception as e:
-        return f"AI Error: {e}"
-
-# -------- Smart Vulnerability Rules -------- #
-RULES = {
-    "android.permission.SEND_SMS": {
-        "severity": "HIGH",
-        "title": "SMS Abuse Risk",
-        "description": "App can send SMS messages without user interaction.",
-        "impact": "Attackers may send premium SMS or perform fraud.",
-        "fix": "Remove permission or require explicit user interaction."
-    },
-    "android.permission.READ_CONTACTS": {
-        "severity": "HIGH",
-        "title": "Privacy Leak - Contacts",
-        "description": "App can access user contacts.",
-        "impact": "Sensitive user data can be exfiltrated.",
-        "fix": "Limit access and request permission only when needed."
-    },
-    "android.permission.WRITE_EXTERNAL_STORAGE": {
-        "severity": "HIGH",
-        "title": "Insecure Storage",
-        "description": "App writes data to shared storage.",
-        "impact": "Data may be accessed by other apps.",
-        "fix": "Use internal storage or encrypt sensitive data."
-    },
-    "android.permission.INTERNET": {
-        "severity": "LOW",
-        "title": "Network Usage",
-        "description": "App uses internet.",
-        "impact": "Potential data transmission risk.",
-        "fix": "Use HTTPS."
-    }
+DANGEROUS_PERMISSIONS = {
+    "SEND_SMS": {"risk": 30, "fix": "Use runtime permission or remove if unnecessary"},
+    "READ_CONTACTS": {"risk": 20, "fix": "Request runtime permission only when needed"},
+    "ACCESS_COARSE_LOCATION": {"risk": 15, "fix": "Request permission only when needed"},
+    "READ_PHONE_STATE": {"risk": 25, "fix": "Use temporary runtime permission"}
 }
 
-# -------- Hash -------- #
-def sha256(file_path):
-    h = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        h.update(f.read())
-    return h.hexdigest()
-
-# -------- MAIN ANALYZER -------- #
-def analyze_apk(apk_path):
-    print(f"\nScanning: {os.path.basename(apk_path)}")
+def scan_apk(file_path: str):
+    """تحليل APK (Static Analysis)"""
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"APK file not found: {file_path}")
 
     try:
-        a, d, dx = AnalyzeAPK(apk_path)
-    except Exception as e:
-        print(f"Error analyzing APK: {e}")
-        return None
+        apk = APK(file_path)
+        permissions = apk.get_permissions() or []
+    except Exception:
+        permissions = []
 
     findings = []
-    permissions = a.get_permissions()
+    risk_score = 0
 
-    # -------- Permission Analysis -------- #
-    for perm in permissions:
-        if perm in RULES:
-            rule = RULES[perm]
-            findings.append({
-                "Name": rule["title"],
-                "OWASP": "Mobile Security",
-                "Description": rule["description"],
-                "Solution": rule["fix"],
-                "Severity": rule["severity"]
-            })
+    
+    for perm, data in DANGEROUS_PERMISSIONS.items():
+        for p in permissions:
+            if perm.lower() in p.lower():
+                findings.append({
+                    "permission": p,
+                    "risk": data["risk"],
+                    "ai_fix": data["fix"]
+                })
+                risk_score += data["risk"]
 
-    # -------- Hardcoded Secrets -------- #
-    secret_hits = 0
-    for string in dx.get_strings():
-        s = str(string)
-        if any(x in s.lower() for x in ["password", "secret", "token", "key="]):
-            if len(s) < 100:
-                secret_hits += 1
+    if not findings:
+        findings.append({"info": "No issues found"})
 
-    if secret_hits > 5:
-        findings.append({
-            "Name": "Hardcoded Secrets",
-            "OWASP": "M2: Insecure Data Storage",
-            "Description": "Hardcoded credentials detected.",
-            "Solution": "Move secrets to backend.",
-            "Severity": "HIGH"
-        })
+    
+    risk_score = min(risk_score, 100)
 
-    # -------- Risk Calculation -------- #
-    score = 0
-    for f in findings:
-        if f["Severity"] == "HIGH":
-            score += 30
-        elif f["Severity"] == "MEDIUM":
-            score += 15
-        else:
-            score += 5
+    verdict = "HIGH RISK" if risk_score >= 40 else "LOW RISK"
 
-    score = min(score, 100)
-
-    if score > 70:
-        risk = "HIGH"
-    elif score > 30:
-        risk = "MEDIUM"
-    else:
-        risk = "LOW"
-
-    # -------- Clean Permissions -------- #
-    clean_permissions = [p.split(".")[-1] for p in permissions]
-
-    # -------- FINAL RESULT (🔥 مهم) -------- #
-    result = {
-        "APK Name": a.get_app_name(),
-        "Risk Score": score,
-        "Risk Level": risk,
-        "Permissions": clean_permissions,
-        "Vulnerabilities": findings
+    return {
+        "name": os.path.basename(file_path),
+        "risk_score": risk_score,
+        "permissions": permissions,
+        "findings": findings,
+        "verdict": verdict
     }
 
-    # -------- Save JSON -------- #
-    os.makedirs("reports", exist_ok=True)
-    with open(f"reports/{os.path.basename(apk_path)}.json", "w") as f:
-        json.dump(result, f, indent=4)
-
-    print(f"Risk: {risk} | Score: {score}")
-    return result
-
-
-# -------- Scan Directory -------- #
-def scan_directory(path):
+def main(folder_path: str):
     results = []
-    for file in os.listdir(path):
-        if file.endswith(".apk"):
-            res = analyze_apk(os.path.join(path, file))
-            if res:
-                results.append(res)
-    return results
 
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError("Folder not found!")
 
-# -------- MAIN -------- #
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".apk"):
+            file_path = os.path.join(folder_path, filename)
+            try:
+                result = scan_apk(file_path)
+                results.append(result)
+
+               
+                print(f"Scanned: {filename} → {result['verdict']} ({result['risk_score']}/100)")
+
+            except Exception:
+                print(f"Failed to scan: {filename}")
+                continue
+
+    
+    os.makedirs("reports", exist_ok=True)
+
+    
+    with open("reports/scan_results.json", "w") as f:
+        json.dump(results, f, indent=4)
+
+    print("\nAll APKs scanned! Full details saved in reports/scan_results.json")
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python halasec_scan.py <apk_folder>")
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python halasec_scan.py <folder_with_apks>")
     else:
-        scan_directory(sys.argv[1])
+        main(sys.argv[1])
