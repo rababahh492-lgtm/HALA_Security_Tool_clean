@@ -1,101 +1,180 @@
+from androguard.misc import AnalyzeAPK
 import os
-from datetime import datetime
-from androguard.core.bytecodes.apk import APK
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+import sys
 import json
+import hashlib
+import requests
 
-REPORTS_DIR = "reports"
-
-def scan_apk(apk_path):
-    
+def ai_analyze(findings, permissions):
     try:
-        apk = APK(apk_path)
+        prompt = f"""
+You are a cybersecurity expert.
+
+Analyze the following APK scan results:
+
+Permissions:
+{permissions}
+
+Findings:
+{findings}
+
+Give:
+1. Risk Level (LOW/MEDIUM/HIGH)
+2. Short explanation
+3. Security recommendations
+"""
+
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": "mistral",
+                "prompt": prompt,
+                "stream": False
+            }
+        )
+
+        result = response.json()["response"]
+
+        return result
+
     except Exception as e:
-        return None, f"Invalid APK file: {str(e)}"
+        return f"AI Error: {e}"
 
-   
-    try:
-        version = apk.get_androidversion_name() or "Unknown"
-    except KeyError:
-        version = "Unknown"
-
-    apk_info = {
-        "APK Name": apk.get_app_name() or "Unknown",
-        "Package Name": apk.get_package() or "Unknown",
-        "Version": version,
-        "Permissions": apk.get_permissions(),
-        "Activities": apk.get_activities(),
-        "Services": apk.get_services(),
-        "Receivers": apk.get_receivers(),
-        "Providers": apk.get_providers(),
-        "Scan Date": datetime.now().strftime("%Y-%m-%d"),
-        "Scan Time": datetime.now().strftime("%H:%M:%S"),
-        "Risk Score": min(len(apk.get_permissions()) * 5, 100),
-        "Risk Level": "HIGH" if len(apk.get_permissions()) > 5 else "LOW"
+# -------- Smart Vulnerability Rules -------- #
+RULES = {
+    "android.permission.SEND_SMS": {
+        "severity": "HIGH",
+        "title": "SMS Abuse Risk",
+        "description": "App can send SMS messages without user interaction.",
+        "impact": "Attackers may send premium SMS or perform fraud.",
+        "fix": "Remove permission or require explicit user interaction."
+    },
+    "android.permission.READ_CONTACTS": {
+        "severity": "HIGH",
+        "title": "Privacy Leak - Contacts",
+        "description": "App can access user contacts.",
+        "impact": "Sensitive user data can be exfiltrated.",
+        "fix": "Limit access and request permission only when needed."
+    },
+    "android.permission.WRITE_EXTERNAL_STORAGE": {
+        "severity": "HIGH",
+        "title": "Insecure Storage",
+        "description": "App writes data to shared storage.",
+        "impact": "Data may be accessed by other apps.",
+        "fix": "Use internal storage or encrypt sensitive data."
+    },
+    "android.permission.INTERNET": {
+        "severity": "LOW",
+        "title": "Network Usage",
+        "description": "App uses internet.",
+        "impact": "Potential data transmission risk.",
+        "fix": "Use HTTPS."
     }
+}
 
-    return apk_info, None
+# -------- Hash -------- #
+def sha256(file_path):
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
 
-def save_reports(apk_info, apk_path):
-    
-    if not apk_info:
+# -------- MAIN ANALYZER -------- #
+def analyze_apk(apk_path):
+    print(f"\nScanning: {os.path.basename(apk_path)}")
+
+    try:
+        a, d, dx = AnalyzeAPK(apk_path)
+    except Exception as e:
+        print(f"Error analyzing APK: {e}")
         return None
 
-    apk_name = apk_info.get("APK Name", "Unknown").replace(" ", "_")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_folder = os.path.join(REPORTS_DIR, f"{apk_name}_{timestamp}")
-    os.makedirs(output_folder, exist_ok=True)
+    findings = []
+    permissions = a.get_permissions()
 
-    # TXT
-    txt_path = os.path.join(output_folder, f"{apk_name}_report.txt")
-    with open(txt_path, "w", encoding="utf-8") as f:
-        for k, v in apk_info.items():
-            f.write(f"{k}: {v}\n")
+    # -------- Permission Analysis -------- #
+    for perm in permissions:
+        if perm in RULES:
+            rule = RULES[perm]
+            findings.append({
+                "Name": rule["title"],
+                "OWASP": "Mobile Security",
+                "Description": rule["description"],
+                "Solution": rule["fix"],
+                "Severity": rule["severity"]
+            })
 
-    # JSON
-    json_path = os.path.join(output_folder, f"{apk_name}_report.json")
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(apk_info, f, indent=4)
+    # -------- Hardcoded Secrets -------- #
+    secret_hits = 0
+    for string in dx.get_strings():
+        s = str(string)
+        if any(x in s.lower() for x in ["password", "secret", "token", "key="]):
+            if len(s) < 100:
+                secret_hits += 1
 
-    # PDF
-    pdf_path = os.path.join(output_folder, f"{apk_name}_report.pdf")
-    c = canvas.Canvas(pdf_path, pagesize=letter)
-    width, height = letter
-    y = height - 50
-    c.setFont("Helvetica", 12)
-    c.drawString(50, y, f"HALA-SCAN SECURITY REPORT - {apk_name}")
-    y -= 30
-    for k, v in apk_info.items():
-        if isinstance(v, list):
-            v = ", ".join(v)
-        c.drawString(50, y, f"{k}: {v}")
-        y -= 20
-        if y < 50:
-            c.showPage()
-            y = height - 50
-    c.save()
+    if secret_hits > 5:
+        findings.append({
+            "Name": "Hardcoded Secrets",
+            "OWASP": "M2: Insecure Data Storage",
+            "Description": "Hardcoded credentials detected.",
+            "Solution": "Move secrets to backend.",
+            "Severity": "HIGH"
+        })
 
-    print(f">>> Scan completed: {apk_info['Risk Level']} ({apk_info['Risk Score']}/100) <<<")
-    print(f"Report saved in: {output_folder}")
-    return output_folder
+    # -------- Risk Calculation -------- #
+    score = 0
+    for f in findings:
+        if f["Severity"] == "HIGH":
+            score += 30
+        elif f["Severity"] == "MEDIUM":
+            score += 15
+        else:
+            score += 5
 
-def main(folder="test_files"):
-    if not os.path.exists(folder):
-        print(f"Folder {folder} does not exist!")
-        return
+    score = min(score, 100)
 
-    files = [f for f in os.listdir(folder) if f.endswith(".apk")]
-    if not files:
-        print("No APK files found in the folder.")
-        return
+    if score > 70:
+        risk = "HIGH"
+    elif score > 30:
+        risk = "MEDIUM"
+    else:
+        risk = "LOW"
 
-    for file_name in files:
-        file_path = os.path.join(folder, file_name)
-        apk_result, error = scan_apk(file_path)
-        if error:
-            print(f"Missing AndroidManifest.xml or invalid APK: {file_name}")
-        save_reports(apk_result, file_path)
+    # -------- Clean Permissions -------- #
+    clean_permissions = [p.split(".")[-1] for p in permissions]
 
+    # -------- FINAL RESULT (🔥 مهم) -------- #
+    result = {
+        "APK Name": a.get_app_name(),
+        "Risk Score": score,
+        "Risk Level": risk,
+        "Permissions": clean_permissions,
+        "Vulnerabilities": findings
+    }
+
+    # -------- Save JSON -------- #
+    os.makedirs("reports", exist_ok=True)
+    with open(f"reports/{os.path.basename(apk_path)}.json", "w") as f:
+        json.dump(result, f, indent=4)
+
+    print(f"Risk: {risk} | Score: {score}")
+    return result
+
+
+# -------- Scan Directory -------- #
+def scan_directory(path):
+    results = []
+    for file in os.listdir(path):
+        if file.endswith(".apk"):
+            res = analyze_apk(os.path.join(path, file))
+            if res:
+                results.append(res)
+    return results
+
+
+# -------- MAIN -------- #
 if __name__ == "__main__":
-    main("test_files") 
+    if len(sys.argv) != 2:
+        print("Usage: python halasec_scan.py <apk_folder>")
+    else:
+        scan_directory(sys.argv[1])
